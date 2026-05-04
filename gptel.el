@@ -1958,7 +1958,7 @@ for streaming responses only."
              (start-marker (plist-get info :position)))
         (with-current-buffer (marker-buffer start-marker)
           (if (eq text t)               ;end of stream
-              (progn
+              (when (plist-get info :reasoning-open)
                 (gptel-curl--stream-insert-response
                  (concat (if (derived-mode-p 'org-mode)
                              "\n#+end_reasoning"
@@ -1967,6 +1967,7 @@ for streaming responses only."
                                        'keymap gptel--markdown-block-map))
                          gptel-response-separator)
                  info t)
+                (plist-put info :reasoning-open nil)
                 (ignore-errors          ;fold block
                   (save-excursion
                     (goto-char tracking-marker)
@@ -1990,7 +1991,8 @@ for streaming responses only."
                            ;; TODO(reasoning) remove properties and strip instead
                            (propertize "``` reasoning\n" 'gptel 'ignore
                                        'keymap gptel--markdown-block-map)))
-                 info t)))
+                 info t)
+                (plist-put info :reasoning-open t)))
             (if (eq include 'ignore)
                 (progn
                   (add-text-properties
