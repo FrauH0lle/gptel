@@ -2318,8 +2318,9 @@ be used to rerun or continue the request at a later time."
   "Realize the query payload for FSM from its prompt buffer.
 
 Initiate the request when done."
-  (let ((info (gptel-fsm-info fsm)))
-    (with-current-buffer (plist-get info :data)
+  (let* ((info (gptel-fsm-info fsm))
+         (prompt-buffer (plist-get info :data)))
+    (with-current-buffer prompt-buffer
       (let* ((directive (gptel--parse-directive gptel-system-prompt 'raw))
              ;; DIRECTIVE contains both the system message and the template prompts
              (gptel-system-prompt
@@ -2361,7 +2362,7 @@ Initiate the request when done."
           (plist-put info :tools gptel-tools))
         (plist-put info :data
                    (gptel--request-data gptel-backend full-prompt)))
-      (kill-buffer (current-buffer)))
+      (kill-buffer prompt-buffer))
     ;; INIT -> WAIT
     (unless (plist-get info :dry-run) (gptel--fsm-transition fsm))
     fsm))
