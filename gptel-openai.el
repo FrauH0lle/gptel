@@ -138,6 +138,9 @@ information if the stream contains it."
                   (when (plist-member info :reasoning-chunks) (plist-put info :reasoning-chunks nil)))
               (when-let* ((response (gptel--json-read))
                           (delta (map-nested-elt response '(:choices 0 :delta))))
+                (when (and (equal (plist-get delta :role) "assistant")
+                           (eq (plist-get info :reasoning-block) 'done))
+                  (plist-put info :reasoning-block nil))
                 (if-let* ((content (plist-get delta :content))
                           ((not (or (eq content :null) (string-empty-p content)))))
                     (push content content-strs)
@@ -160,19 +163,21 @@ information if the stream contains it."
                           (plist-put info :tool-use (cons tool-call (plist-get info :tool-use))))
                       ;; old tool block continues, so continue collecting arguments in :partial_json
                       (push (plist-get func :arguments) (plist-get info :partial_json)))))
-                ;; Check for reasoning blocks, currently only used by Openrouter
-                (unless (eq (plist-get info :reasoning-block) 'done)
-                  (if-let* ((reasoning-plist ;reasoning-plist is (:reasoning.* "chunk" ...) or nil
-                             (or (plist-member delta :reasoning) ;for Openrouter and co
-                                 (plist-member delta :reasoning_content))) ;for Deepseek, Llama.cpp
-                            (reasoning-chunk (cadr reasoning-plist))
-                            ((not (or (eq reasoning-chunk :null) (string-empty-p reasoning-chunk)))))
-                      (progn (plist-put info :reasoning ;For stream filter consumption
-                                        (concat (plist-get info :reasoning) reasoning-chunk))
-                             (plist-put info :reasoning-chunks ;To include with tool call results, if any
-                                        (cons reasoning-chunk (or (plist-get info :reasoning-chunks)
-                                                                  (list (car reasoning-plist))))))
-                    ;; Done with reasoning if we get non-empty content
+                ;; Check for reasoning blocks.
+                (if-let* ((reasoning-plist ;reasoning-plist is (:reasoning.* "chunk" ...) or nil
+                           (or (plist-member delta :reasoning) ;for Openrouter and co
+                               (plist-member delta :reasoning_content))) ;for Deepseek, Llama.cpp
+                          (reasoning-chunk (cadr reasoning-plist))
+                          ((not (or (eq reasoning-chunk :null) (string-empty-p reasoning-chunk)))))
+                    (progn
+                      (unless (eq (plist-get info :reasoning-block) 'done)
+                        (plist-put info :reasoning ;For stream filter consumption
+                                   (concat (plist-get info :reasoning) reasoning-chunk)))
+                      (plist-put info :reasoning-chunks ;To include with tool call results, if any
+                                 (cons reasoning-chunk (or (plist-get info :reasoning-chunks)
+                                                           (list (car reasoning-plist))))))
+                  ;; Done with reasoning if we get non-empty content
+                  (unless (eq (plist-get info :reasoning-block) 'done)
                     (if-let* (((plist-member info :reasoning)) ;Is this a reasoning model?
                               (c (plist-get delta :content)) ;Started receiving text content?
                               ((not (or (eq c :null) (string-blank-p c)))))
