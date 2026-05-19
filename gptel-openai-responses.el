@@ -33,6 +33,56 @@
 (declare-function gptel-context--collect-media "gptel-context")
 
 ;;; OpenAI Responses
+(defconst gptel--openai-responses-reasoning-include
+  "reasoning.encrypted_content")
+
+(defun gptel--openai-responses-ensure-reasoning-include (data)
+  "Add encrypted reasoning output to DATA's include list."
+  (let* ((include (plist-get data :include))
+         (entries (cond
+                   ((vectorp include)
+                    (cl-loop for entry across include collect entry))
+                   ((listp include) include)
+                   (include (list include)))))
+    (unless (member gptel--openai-responses-reasoning-include entries)
+      (setq entries
+            (append entries (list gptel--openai-responses-reasoning-include))))
+    (plist-put data :include (vconcat entries))))
+
+(defun gptel--openai-responses-replay-item-p (item)
+  "Return non-nil if ITEM should be replayed in stateless continuations."
+  (pcase (plist-get item :type)
+    ((or "reasoning" "function_call") t)
+    ("message" (equal (plist-get item :role) "assistant"))))
+
+(defun gptel--openai-responses-record-replay-item (info event-data item)
+  "Record replayable ITEM from EVENT-DATA in INFO."
+  (when (gptel--openai-responses-replay-item-p item)
+    (plist-put
+     info :response-items
+     (cons (cons (or (plist-get event-data :output_index)
+                     (length (plist-get info :response-items)))
+                 (copy-sequence item))
+           (plist-get info :response-items)))))
+
+(defun gptel--openai-responses-replay-items (info)
+  "Return replay items recorded in INFO in response output order."
+  (mapcar #'cdr
+          (cl-sort (copy-sequence (plist-get info :response-items))
+                   #'< :key #'car)))
+
+(defun gptel--openai-responses-assistant-message (content &optional phase)
+  "Build an assistant message with CONTENT for manual history replay."
+  (list :role "assistant" :content content
+        :phase (or phase "final_answer")))
+
+(defun gptel--openai-responses-response-before-prompt-p (entries)
+  "Return non-nil if ENTRIES contains a response before the next prompt."
+  (cl-loop for entry in entries
+           for kind = (car-safe entry)
+           until (eq kind 'prompt)
+           thereis (eq kind 'response)))
+
 (defun gptel--openai-responses-update-tokens (usage info)
   "Update token usage information from USAGE.
 USAGE is part of the response, INFO is the request plist."
@@ -87,6 +137,8 @@ information if the stream contains it."
                 ("response.output_item.done"
                  (when-let* ((item (plist-get data :item))
                              (type (plist-get item :type)))
+                   (gptel--openai-responses-record-replay-item
+                    info data item)
                    (pcase type
                      ("function_call"
                       (when-let* ((tool-call
@@ -125,21 +177,14 @@ information if the stream contains it."
                              content-strs))))
                 ;; Response completed
                 ("response.completed"
-                 (when-let* ((tool-use (plist-get info :tool-use)))
-                   ;; Inject tool calls into prompt data for continuation
-                   ;; TODO(responses-api) Avoid re-encoding these tool calls,
-                   ;; especially :arguments
-                   (gptel--inject-prompt
-                    (plist-get info :backend) (plist-get info :data)
-                    (mapcar (lambda (tc)
-                              (list :type "function_call"
-                                    :call_id (plist-get tc :id)
-                                    :name (plist-get tc :name)
-                                    :arguments
-                                    (decode-coding-string
-                                     (gptel--json-encode (plist-get tc :args))
-                                     'utf-8 t)))
-                            tool-use)))
+                 (let ((tool-use (plist-get info :tool-use))
+                       (replay-items (gptel--openai-responses-replay-items info)))
+                   ;; Inject response output items into prompt data for continuation
+                   (when (and tool-use replay-items)
+                     (gptel--inject-prompt
+                      (plist-get info :backend) (plist-get info :data)
+                      replay-items))
+                   (plist-put info :response-items nil))
                  (when-let* ((resp (plist-get data :response)))
                    (plist-put info :stop-reason (plist-get resp :status))
                    (gptel--openai-responses-update-tokens
@@ -155,7 +200,7 @@ information if the stream contains it."
   "Parse an OpenAI Responses API RESPONSE and return response text.
 Mutate state INFO with response metadata."
   (let ((output-items (plist-get response :output))
-        (content-strs) (tool-use) (tool-calls))
+        (content-strs) (tool-use) (replay-items))
     ;; Store usage info
     (plist-put info :stop-reason (plist-get response :status))
     (gptel--openai-responses-update-tokens (plist-get response :usage) info)
@@ -164,6 +209,8 @@ Mutate state INFO with response metadata."
      for item across output-items
      for item-type = (plist-get item :type)
      do
+     (when (gptel--openai-responses-replay-item-p item)
+       (push (copy-sequence item) replay-items))
      (pcase item-type
        ;; Text message output
        ("message"
@@ -178,7 +225,6 @@ Mutate state INFO with response metadata."
                     content-strs))))
        ;; Function call from model (user-defined tools)
        ("function_call"
-        (push item tool-calls)
         (push (list :id (plist-get item :call_id)
                     :name (plist-get item :name)
                     :args (ignore-errors
@@ -224,7 +270,7 @@ Mutate state INFO with response metadata."
       ;; Inject into prompts for conversation continuity
       (gptel--inject-prompt
        (plist-get info :backend) (plist-get info :data)
-       (nreverse tool-calls)))
+       (nreverse replay-items)))
     ;; Return concatenated content
     (when content-strs
       (apply #'concat (nreverse content-strs)))))
@@ -267,11 +313,12 @@ Mutate state INFO with response metadata."
                                       (gptel--dispatch-schema-type gptel--schema))
                              :strict t))))
     ;; Merge request params
-    (gptel--merge-plists
-     prompts-plist
-     gptel--request-params
-     (gptel-backend-request-params gptel-backend)
-     (gptel--model-request-params gptel-model))))
+    (gptel--openai-responses-ensure-reasoning-include
+     (gptel--merge-plists
+      prompts-plist
+      gptel--request-params
+      (gptel-backend-request-params gptel-backend)
+      (gptel--model-request-params gptel-model)))))
 
 ;; Helper functions for Responses API format conversion
 
@@ -398,12 +445,20 @@ If POSITION is
   "Parse PROMPT-LIST into a list of messages for BACKEND."
   (if (consp (car prompt-list))
       (let ((full-prompt))              ; Advanced format, list of lists
-        (dolist (entry prompt-list)
+        (cl-loop
+         for tail on prompt-list
+         for entry = (car tail)
+         do
           (pcase entry
             (`(prompt . ,msg)
              (push (list :role "user" :content (or (car-safe msg) msg)) full-prompt))
             (`(response . ,msg)
-             (push (list :role "assistant" :content (or (car-safe msg) msg)) full-prompt))
+             (push (gptel--openai-responses-assistant-message
+                    (or (car-safe msg) msg)
+                    (when (gptel--openai-responses-response-before-prompt-p
+                           (cdr tail))
+                      "commentary"))
+                   full-prompt))
             (`(tool . ,call)
              (unless (plist-get call :id)
                (plist-put call :id (gptel--openai-format-tool-id nil)))
@@ -420,12 +475,14 @@ If POSITION is
     (cl-loop for text in prompt-list    ; Simple format, list of strings
              for role = t then (not role)
              if text collect
-             (list :role (if role "user" "assistant") :content text))))
+             (if role
+                 (list :role "user" :content text)
+               (gptel--openai-responses-assistant-message text)))))
 
 (cl-defmethod gptel--parse-buffer ((backend gptel-openai-responses) &optional max-entries)
   "Parse the current buffer into a list of messages for BACKEND.
 Include up to MAX-ENTRIES queries/responses."
-  (let ((prompts) (prev-pt (point)))
+  (let ((prompts) (prev-pt (point)) final-response-seen)
     (if (or gptel-mode gptel-track-response)
         (while (and (or (not max-entries) (>= max-entries 0))
                     (/= prev-pt (point-min))
@@ -435,7 +492,11 @@ Include up to MAX-ENTRIES queries/responses."
             ('response
              (when-let* ((content (gptel--trim-prefixes
                                    (buffer-substring-no-properties (point) prev-pt))))
-               (push (list :role "assistant" :content content) prompts)))
+               (push (gptel--openai-responses-assistant-message
+                      content
+                      (and final-response-seen "commentary"))
+                     prompts)
+               (setq final-response-seen t)))
             (`(tool . ,id)
              (save-excursion
                (condition-case nil
@@ -467,10 +528,12 @@ Include up to MAX-ENTRIES queries/responses."
                                        (gptel--parse-media-links major-mode
                                                                  (point) prev-pt))))
                    (when (> (length content) 0)
-                     (push (list :role "user" :content content) prompts)))
+                     (push (list :role "user" :content content) prompts)
+                     (setq final-response-seen nil)))
                (when-let* ((content (gptel--trim-prefixes (buffer-substring-no-properties
                                                            (point) prev-pt))))
-                 (push (list :role "user" :content content) prompts)))))
+                 (push (list :role "user" :content content) prompts)
+                 (setq final-response-seen nil)))))
           (setq prev-pt (point)))
       (let ((content (string-trim (buffer-substring-no-properties
                                    (point-min) (point-max)))))
