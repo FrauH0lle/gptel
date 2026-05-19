@@ -810,9 +810,9 @@ send in queries.  (See `gptel--num-messages-to-send' for the last one.)"
 Intended to be added to `after-change-functions' in gptel chat buffers,
 which see for BEG, END and PRE."
   (and (/= beg end) (< end (point-max))
-       (and-let* ((val (get-text-property end 'gptel)))
-         (add-text-properties
-          beg end `(gptel ,val front-sticky (gptel))))))
+       (eq (get-text-property end 'gptel) 'response)
+       (add-text-properties
+        beg end '(gptel response front-sticky (gptel)))))
 
 (defun gptel-markdown--annotate-links (beg end)
   "Annotate Markdown links whose sources will be sent with `gptel-send'.
@@ -1804,9 +1804,16 @@ Optional RAW disables text properties and transformation."
                (save-excursion (goto-char (point-max)) (insert text)))
            (with-current-buffer (marker-buffer start-marker)
              (let ((separator         ;Separate from response prefix if required
-                    (and (not tracking-marker) gptel-mode
-                         (not (string-suffix-p "\n" (gptel-response-prefix-string)))
-                         "\n"))
+                    (cond
+                     ((not tracking-marker)
+                      (and gptel-mode
+                           (not (string-suffix-p
+                                 "\n" (gptel-response-prefix-string)))
+                           "\n"))
+                     ((and (not (string-suffix-p "\n" gptel-response-separator))
+                           (let ((prev (char-before tracking-marker)))
+                             (and prev (not (eq prev ?\n)))))
+                      "\n")))
                    (blocks (if (derived-mode-p 'org-mode)
                                `("#+begin_reasoning\n" . ,(concat "\n#+end_reasoning"
                                                            gptel-response-separator))
@@ -1821,7 +1828,7 @@ Optional RAW disables text properties and transformation."
                      (add-text-properties
                       0 (length text) '(gptel ignore front-sticky (gptel)) text)
                      (gptel--insert-response
-                      (concat (car blocks) text (cdr blocks)) info t))
+                      (concat separator (car blocks) text (cdr blocks)) info t))
                  (gptel--insert-response (concat separator (car blocks)) info t)
                  (gptel--insert-response text info)
                  (gptel--insert-response (cdr blocks) info t))
@@ -1980,10 +1987,15 @@ for streaming responses only."
             (unless (and reasoning-marker tracking-marker
                          (= reasoning-marker tracking-marker))
               (let ((separator        ;Separate from response prefix if required
-                     (and (not tracking-marker) gptel-mode
-                          (not (string-suffix-p
-                                "\n" (gptel-response-prefix-string)))
-                          "\n")))
+                     (cond
+                      ((not tracking-marker)
+                       (and gptel-mode
+                            (not (string-suffix-p
+                                  "\n" (gptel-response-prefix-string)))
+                            "\n"))
+                      ((let ((prev (char-before tracking-marker)))
+                         (and prev (not (eq prev ?\n))))
+                       "\n"))))
                 (gptel-curl--stream-insert-response
                  (concat separator
                          (if (derived-mode-p 'org-mode)
