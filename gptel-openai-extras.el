@@ -363,25 +363,34 @@ message."
           (host "api.deepseek.com")
           (protocol "https")
           (endpoint "/v1/chat/completions")
-          (models '((deepseek-v4-flash
-                     :capabilities (tool-use reasoning)
-                     :reasoning-effort (member disabled high max)
-                     :context-window 1000
-                     :input-cost 0.14
-                     :output-cost 0.28)
-                    (deepseek-v4-pro
-                     :capabilities (tool-use reasoning)
-                     :reasoning-effort (member disabled high max)
-                     :context-window 1000
-                     :input-cost 0.435
-                     :output-cost 0.87)
-                    (deepseek-v4-flash-vision-exp
+          (models '((deepseek-flash
                      :capabilities (media tool-use reasoning url)
                      :reasoning-effort (member disabled high max)
                      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
                      :context-window 1000
-                     :input-cost 0.14
-                     :output-cost 0.28))))
+                     :input-cost 0.15
+                     :output-cost 0.6)
+                    (deepseek-v4-pro
+                     :capabilities (tool-use reasoning)
+                     :reasoning-effort (member disabled high max)
+                     :context-window 1000
+                     :input-cost 0.66
+                     :output-cost 1.98)
+                    (deepseek-v4-flash
+                     :description "DEPRECATED: Use deepseek-flash instead."
+                     :capabilities (tool-use reasoning)
+                     :reasoning-effort (member disabled high max)
+                     :context-window 1000
+                     :input-cost 0.15
+                     :output-cost 0.6)
+                    (deepseek-v4-flash-vision-exp
+                     :description "DEPRECATED: Use deepseek-flash instead."
+                     :capabilities (media tool-use reasoning url)
+                     :reasoning-effort (member disabled high max)
+                     :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+                     :context-window 1000
+                     :input-cost 0.15
+                     :output-cost 0.6))))
   "Register a DeepSeek backend for gptel with NAME.
 
 CURL-ARGS, STREAM, KEY, REQUEST-PARAMS, HEADER, HOST, PROTOCOL,
