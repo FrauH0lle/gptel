@@ -117,12 +117,6 @@ information if the stream contains it."
               (forward-char 5)
               (setq data (gptel--json-read))
               (pcase event-type
-                ;; Output item starts
-                ("response.output_item.added"
-                 (when-let* ((item (plist-get data :item))
-                             ((equal (plist-get item :type) "reasoning")))
-                   (plist-put info :reasoning-block nil)
-                   (plist-put info :reasoning nil)))
                 ;; Text content delta
                 ("response.output_text.delta"
                  (when-let* ((delta (plist-get data :delta))
@@ -135,23 +129,19 @@ information if the stream contains it."
                               (cons delta (plist-get info :partial_json)))))
                 ;; Function call completed (user-defined tools)
                 ("response.output_item.done"
-                 (when-let* ((item (plist-get data :item))
-                             (type (plist-get item :type)))
+                 (when-let* ((item (plist-get data :item)))
                    (gptel--openai-responses-record-replay-item
                     info data item)
-                   (pcase type
-                     ("function_call"
-                      (when-let* ((tool-call
-                                   (list :id (plist-get item :call_id)
-                                         :name (plist-get item :name)
-                                         :args (ignore-errors
-                                                 (gptel--json-read-string
-                                                  (plist-get item :arguments))))))
-                        (plist-put info :tool-use
-                                   (cons tool-call (plist-get info :tool-use)))
-                        (plist-put info :partial_json nil)))
-                     ("reasoning"
-                      (plist-put info :reasoning-block t)))))
+                   (when-let* (((equal (plist-get item :type) "function_call"))
+                               (tool-call
+                                (list :id (plist-get item :call_id)
+                                      :name (plist-get item :name)
+                                      :args (ignore-errors
+                                              (gptel--json-read-string
+                                               (plist-get item :arguments))))))
+                     (plist-put info :tool-use
+                                (cons tool-call (plist-get info :tool-use)))
+                     (plist-put info :partial_json nil))))
                 ;; Reasoning content
                 ((or "response.reasoning_summary_text.delta"
                      "response.reasoning.delta")
@@ -160,7 +150,7 @@ information if the stream contains it."
                               (concat (plist-get info :reasoning) delta))))
                 ((or "response.reasoning_summary_text.done"
                      "response.reasoning.done")
-                 nil)
+                 (plist-put info :reasoning-block t))
                 ;; NOTE: backend tools are not supported in gptel yet, this
                 ;; parsing is for the future
                 ;; Web search completed (server-side tool)
