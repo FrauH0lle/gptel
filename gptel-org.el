@@ -661,7 +661,7 @@ send in queries.  (See `gptel--num-messages-to-send' for the last one.)"
         (org-entry-delete pt "GPTEL_TOOLS")))
     ;; Temperature, reasoning effort, max tokens and cutoff
     (if (and (gptel--preset-mismatch-value preset-spec :temperature gptel-temperature)
-             (not (equal gptel-temperature 1.0)))
+             (not (equal (default-value 'gptel-temperature) gptel-temperature)))
         (org-entry-put pt "GPTEL_TEMPERATURE" (number-to-string gptel-temperature))
       (org-entry-delete pt "GPTEL_TEMPERATURE"))
     (if (and (gptel--preset-mismatch-value preset-spec :reasoning-effort
