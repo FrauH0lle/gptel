@@ -154,7 +154,7 @@ included in the authorization request and checked in the callback."
    (url-build-query-string
     `(("response_type" "code")
       ("client_id" ,gptel--openai-oauth-client-id)
-      ("redirect_uri" ,(url-hexify-string redirect-uri))
+      ("redirect_uri" ,redirect-uri)
       ("scope" "openid profile email offline_access")
       ("code_challenge" ,(gptel-oauth--generate-code-challenge verifier))
       ("code_challenge_method" "S256")
@@ -285,7 +285,7 @@ If your browser does not open automatically, browse to %s: "
                      ("client_id" ,gptel--openai-oauth-client-id)
                      ("code" ,code)
                      ("code_verifier" ,verifier)
-                     ("redirect_uri" ,(url-hexify-string redirect-uri))))
+                     ("redirect_uri" ,redirect-uri)))
             :content-type "application/x-www-form-urlencoded")))
     (gptel--openai-oauth-persist backend token-plist)))
 
@@ -424,7 +424,7 @@ before constructing the headers."
                :capabilities (tool-use json responses-api)
                :context-window 128)
               gpt-5.4-mini gpt-5.4 gpt-5.5 gpt-5.6-sol gpt-5.6-terra
-              gpt-5.6-luna)))
+              gpt-5.6-luna gpt-6-astra)))
   "Register a ChatGPT Plus/Pro OAuth backend for gptel with NAME.
 
 This backend uses ChatGPT OAuth tokens (not OpenAI API keys) and
