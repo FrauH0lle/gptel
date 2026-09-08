@@ -526,13 +526,13 @@ ARGS are the original function call arguments."
   (if (derived-mode-p 'org-mode)
       (cl-destructuring-bind
           ( gptel-org--presets gptel-system-prompt gptel-backend
-            gptel-model gptel-temperature gptel-reasoning-effort gptel-max-tokens
-            gptel--num-messages-to-send gptel-tools)
+            gptel-model gptel-temperature gptel-reasoning-effort
+            gptel-max-tokens gptel--num-messages-to-send gptel-tools)
           (seq-mapn (lambda (a b) (or a b))
                     (gptel-org--entry-properties)
                     (list gptel-org--presets gptel-system-prompt gptel-backend
-                          gptel-model gptel-temperature gptel-reasoning-effort gptel-max-tokens
-                          gptel--num-messages-to-send gptel-tools))
+                          gptel-model gptel-temperature gptel-reasoning-effort
+                          gptel-max-tokens gptel--num-messages-to-send gptel-tools))
         (apply send-fun args))
     (apply send-fun args)))
 
@@ -661,7 +661,7 @@ send in queries.  (See `gptel--num-messages-to-send' for the last one.)"
         (org-entry-delete pt "GPTEL_TOOLS")))
     ;; Temperature, reasoning effort, max tokens and cutoff
     (if (and (gptel--preset-mismatch-value preset-spec :temperature gptel-temperature)
-             (not (equal (default-value 'gptel-temperature) gptel-temperature)))
+             (not (equal gptel-temperature 1.0)))
         (org-entry-put pt "GPTEL_TEMPERATURE" (number-to-string gptel-temperature))
       (org-entry-delete pt "GPTEL_TEMPERATURE"))
     (if (and (gptel--preset-mismatch-value preset-spec :reasoning-effort

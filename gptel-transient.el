@@ -1359,29 +1359,9 @@ documention.  Return nil if user does not provide a number, for default."
               (val (and (symbolp history-symbol) (symbol-value history-symbol))))
     (unless (stringp (car val))
       (setcar val (prin1-to-string (car val)))))
-  (if-let* ((effort-type (get gptel-model :reasoning-effort))
-            (allowed-types '(or member integer)))
+  (if-let* ((effort-type (get gptel-model :reasoning-effort)))
       (cl-labels
-          ((compute-effort-options (type target-type fun)
-             (cond
-              ((eq (car type) 'or)
-               (remq
-                nil
-                (mapcan (lambda (type2)
-                          (copy-sequence (compute-effort-options type2 target-type fun)))
-                        (cdr type))))
-              ((eq (car type) target-type)
-               (funcall fun type))
-              ((memq (car type) allowed-types)
-               nil)
-              (t
-               (error "Unknown reasoning effort type %S" type))))
-           (compute-effort-choices (type)
-             (compute-effort-options type 'member #'cdr))
-           (compute-effort-ranges (type)
-             (compute-effort-options type 'integer (lambda (type2)
-                                                     (list (cdr type2)))))
-           (describe-effort-ranges (ranges)
+          ((describe-effort-ranges (ranges)
              (let ((n (length ranges)))
                (cond
                 ((= n 0)
@@ -1396,8 +1376,8 @@ documention.  Return nil if user does not provide a number, for default."
                  (format "%s, %s"
                          (describe-effort-ranges (list (car ranges)))
                          (describe-effort-ranges (cdr ranges))))))))
-        (let* ((effort-choices (cons 'default (compute-effort-choices effort-type)))
-               (effort-ranges (compute-effort-ranges effort-type))
+        (let* ((effort-choices (cons 'default (gptel--reasoning-effort-choices effort-type)))
+               (effort-ranges (gptel--reasoning-effort-ranges effort-type))
                (effort-ranges-desc (format " (%s)" (describe-effort-ranges effort-ranges)))
                ;; Modify the prompt. Based on code from `read-number'.
                (prompt (if (string-match "\\(\\):[ \t]*\\'" prompt)
@@ -1426,8 +1406,12 @@ documention.  Return nil if user does not provide a number, for default."
                                         table
                                         nil
                                         (lambda (result)
-                                          (or (equal result "default")
-                                              (cl-typep (read result) effort-type))))))
+                                          (setq result (read result))
+                                          (or (equal result 'default)
+                                              (cl-typep result effort-type)
+                                              (and (or effort-ranges)
+                                                   (floatp result)
+                                                   (<= 0.0 result 1.0)))))))
           ;; Allow the user to restore the value to nil.
           (and (not (string= effort "default"))
                (read effort))))

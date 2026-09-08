@@ -132,13 +132,13 @@ list."
   (let ((prompts-plist
          (list :contents (vconcat prompts)
                :safetySettings [(:category "HARM_CATEGORY_HARASSMENT"
-                                 :threshold "BLOCK_NONE")
+                                           :threshold "BLOCK_NONE")
                                 (:category "HARM_CATEGORY_SEXUALLY_EXPLICIT"
-                                 :threshold "BLOCK_NONE")
+                                           :threshold "BLOCK_NONE")
                                 (:category "HARM_CATEGORY_DANGEROUS_CONTENT"
-                                 :threshold "BLOCK_NONE")
+                                           :threshold "BLOCK_NONE")
                                 (:category "HARM_CATEGORY_HATE_SPEECH"
-                                 :threshold "BLOCK_NONE")]))
+                                           :threshold "BLOCK_NONE")]))
         params)
     (if gptel-system-prompt
         (plist-put prompts-plist :systemInstruction
@@ -154,17 +154,17 @@ list."
       (setq params
             (plist-put params
                        :temperature (max 0.0 gptel-temperature))))
-    (when gptel-reasoning-effort
+    (when-let* ((effort (gptel--reasoning-effort-normalize gptel-reasoning-effort)))
       (setq params
-            (if (and (symbolp gptel-reasoning-effort)
-                     (not (eq gptel-reasoning-effort 'dynamic)))
+            (if (and (symbolp effort)
+                     (not (eq effort 'dynamic)))
                 (plist-put params
                            :thinkingConfig
-                           (list :thinkingLevel (symbol-name gptel-reasoning-effort)))
+                           (list :thinkingLevel (symbol-name effort)))
               (plist-put params
-                         :thinkingConfig (list :thinkingBudget (if (eq gptel-reasoning-effort 'dynamic)
+                         :thinkingConfig (list :thinkingBudget (if (eq effort 'dynamic)
                                                                    -1
-                                                                 gptel-reasoning-effort))))))
+                                                                 effort))))))
     (when gptel-max-tokens
       (setq params
             (plist-put params
@@ -451,8 +451,8 @@ Media files, if present, are placed in `gptel-context'."
   (gptel--process-models
    '((gemini-pro-latest
       :description "Most powerful Gemini thinking model, always points to latest version"
-      :reasoning-effort (member low medium high)
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -463,8 +463,8 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2025-01")
      (gemini-flash-latest
       :description "Best price / performance, always points to latest version"
-      :reasoning-effort (member minimal low medium high)
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -475,8 +475,8 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2025-01")
      (gemini-flash-lite-latest
       :description "Fastest, cheapest Gemini model, always points to latest version"
-      :reasoning-effort (member minimal low medium high)
       :capabilities (tool-use json media)
+      :reasoning-effort (member minimal low medium high)
       :capabilities (tool-use json media audio video)
       :mime-types ("image/png" "image/jpeg" "image/webp" "application/pdf" "text/plain"
                    "audio/x-aac" "audio/flac" "audio/mp3" "audio/m4a" "audio/mpeg"
@@ -490,6 +490,7 @@ Media files, if present, are placed in `gptel-context'."
      (gemini-3.8-flash
       :description "Engineered for long-horizon software engineering, agents and critical reasoning"
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -501,6 +502,7 @@ Media files, if present, are placed in `gptel-context'."
      (gemini-3.7-flash
       :description "Next generation reasoning model with customizable thinking configurations"
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -512,6 +514,7 @@ Media files, if present, are placed in `gptel-context'."
      (gemini-3.6-flash
       :description "Most intelligent Gemini model built for speed, combining frontier intelligence with superior search and grounding"
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member minimal low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -522,8 +525,8 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2026-03")
      (gemini-3.5-flash
       :description "Most intelligent Gemini model for sustained frontier performance in agentic and coding tasks"
-      :reasoning-effort (member minimal low medium high)
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member minimal low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -535,6 +538,7 @@ Media files, if present, are placed in `gptel-context'."
      (gemini-3.5-flash-lite
       :description "Most cost-efficient multimodal Gemini model, optimized for high-volume agentic tasks and simple data processing"
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member minimal low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -545,8 +549,8 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2026-07")
      (gemini-3.1-pro-preview
       :description "Most intelligent Gemini model with SOTA reasoning and multimodal understanding"
-      :reasoning-effort (member low medium high)
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -568,8 +572,8 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2025-01")
      (gemini-3-flash-preview
       :description "DEPRECATED: Please use gemini-3.6-flash or gemini-3.8-flash instead"
-      :reasoning-effort (member minimal low medium high)
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (member minimal low medium high)
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -580,20 +584,30 @@ Media files, if present, are placed in `gptel-context'."
       :cutoff-date "2025-01")
      (gemini-2.5-pro
       :description "Most powerful Gemini thinking model with state-of-the-art performance"
-      :reasoning-effort (or (member dynamic) (integer 128 32768))
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (or (member dynamic) (integer 128 32768))
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
                    "video/mp4" "video/mpeg" "video/avi" "video/quicktime" "video/webm")
-      :context-window 1048              ; 65536 output token limit
-      :input-cost 1.25                  ; 2.50 for >200k tokens
-      :output-cost 10.00                ; 15 for >200k tokens
+      :context-window 1048               ; 65536 output token limit
+      :input-cost 1.25                   ; 2.50 for >200k tokens
+      :output-cost 10.00                 ; 15 for >200k tokens
+      :cutoff-date "2025-01")
+     (gemini-2.5-pro-preview-06-05
+      :description "Most powerful thinking model with state-of-the-art performance"
+      :capabilities (tool-use json media)
+      :reasoning-effort (or (member dynamic) (integer 128 32768))
+      :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
+                   "application/pdf" "text/plain" "text/csv" "text/html")
+      :context-window 1048               ; 65536 output token limit
+      :input-cost 1.25                   ; 2.50 for >200k tokens
+      :output-cost 10.00                 ; 15 for >200k tokens
       :cutoff-date "2025-01")
      (gemini-2.5-flash
       :description "Best in terms of price-performance, with well-rounded capabilities"
-      :reasoning-effort (or (member dynamic) (integer 0 24576))
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (or (member dynamic) (integer 0 24576))
       :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
                    "application/pdf" "text/plain" "text/csv" "text/html"
                    "audio/mpeg" "audio/wav" "audio/ogg" "audio/flac" "audio/aac" "audio/mp3"
@@ -602,10 +616,20 @@ Media files, if present, are placed in `gptel-context'."
       :input-cost 0.3
       :output-cost 2.50
       :cutoff-date "2025-01")
+     (gemini-2.5-flash-preview-09-2025
+      :description "DEPRECATED: Please use gemini-2.5-flash instead"
+      :capabilities (tool-use json media)
+      :reasoning-effort (or (member dynamic) (integer 0 24576))
+      :mime-types ("image/png" "image/jpeg" "image/webp" "image/heic" "image/heif"
+                   "application/pdf" "text/plain" "text/csv" "text/html")
+      :context-window 1048               ; 65536 output token limit
+      :input-cost 0.15
+      :output-cost 0.60                  ; 3.50 for thinking
+      :cutoff-date "2025-01")
      (gemini-2.5-flash-lite
       :description "Fastest & cheapest 2.5 model, for high-volume, latency-sensitive tasks"
-      :reasoning-effort (or (member dynamic) (integer 0 0) (integer 512 24576))
       :capabilities (tool-use json media audio video)
+      :reasoning-effort (or (member dynamic) (integer 0 0) (integer 512 24576))
       :mime-types ("image/png" "image/jpeg" "image/webp" "application/pdf" "text/plain"
                    "audio/x-aac" "audio/flac" "audio/mp3" "audio/m4a" "audio/mpeg"
                    "audio/mpga" "audio/mp4" "audio/opus" "audio/pcm" "audio/wav" "audio/webm"
