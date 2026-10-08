@@ -643,11 +643,13 @@ Convenient to use with `cl-multiple-value-bind'"
   ;; https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock#supported-models
   '((claude-sonnet-4-6           . "anthropic.claude-sonnet-4-6")
     (claude-sonnet-5             . "anthropic.claude-sonnet-5")
+    (claude-sonnet-5-5           . "anthropic.claude-sonnet-5-5")
     (claude-opus-4-6             . "anthropic.claude-opus-4-6-v1")
     (claude-opus-4-7             . "anthropic.claude-opus-4-7")
     (claude-opus-4-8             . "anthropic.claude-opus-4-8")
     (claude-opus-4-9             . "anthropic.claude-opus-4-9")
     (claude-opus-5               . "anthropic.claude-opus-5")
+    (claude-opus-5-5             . "anthropic.claude-opus-5-5")
     (claude-fable-5              . "anthropic.claude-fable-5")
     (claude-haiku-4-5            . "anthropic.claude-haiku-4-5")
     (claude-sonnet-4-5-20250929  . "anthropic.claude-sonnet-4-5-20250929-v1:0")
