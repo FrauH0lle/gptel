@@ -249,7 +249,12 @@ Mutate state INFO with response metadata."
     (when-let* ((effort (gptel--reasoning-effort-normalize gptel-reasoning-effort)))
       (cond
        ((eq effort 'disabled)
-        (plist-put prompts-plist :thinking (list :type "disabled")))
+        (plist-put prompts-plist
+                   ;; Older models use the thinking type "disabled" to turn off
+                   ;; reasoning while newer ones use "between_tools".
+                   :thinking (list :type (or (plist-get (get gptel-model :provider)
+                                                        :anthropic-disabled-reasoning-effort)
+                                             "disabled"))))
        ((symbolp effort)
         ;; Adaptive thinking is recommended by Anthropic and is the default
         ;; for newer models. Some older models don't support it so it is not
@@ -591,6 +596,7 @@ Media files, if present, are placed in `gptel-context'."
    '((claude-sonnet-5-5
       :description "The best combination of speed and intelligence"
       :capabilities (media tool-use cache)
+      :provider (:anthropic-disabled-reasoning-effort "between_tools")
       :reasoning-effort (member disabled low medium high xhigh max)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
       :context-window 1000
@@ -600,6 +606,7 @@ Media files, if present, are placed in `gptel-context'."
      (claude-sonnet-5
       :description "The best combination of speed and intelligence"
       :capabilities (media tool-use cache)
+      :reasoning-effort (member disabled low medium high xhigh max)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
       :context-window 1000
       :input-cost 2
@@ -611,8 +618,8 @@ Media files, if present, are placed in `gptel-context'."
       :reasoning-effort (member disabled low medium high xhigh max)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
       :context-window 1000
-      :input-cost 3
-      :output-cost 15
+      :input-cost 2
+      :output-cost 10
       :cutoff-date "2026-01")
      (claude-sonnet-4-5-20250929
       :description "High-performance model with exceptional reasoning and efficiency"
@@ -626,6 +633,15 @@ Media files, if present, are placed in `gptel-context'."
       :input-cost 3
       :output-cost 15
       :cutoff-date "2025-07")
+     (claude-haiku-5-5
+      :description "Near-frontier intelligence at blazing speeds with extended thinking"
+      :capabilities (media tool-use cache)
+      :reasoning-effort (member disabled low medium high xhigh max)
+      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
+      :context-window 1000
+      :input-cost 0.10                  ; 0.50 for >100k tokens
+      :output-cost 0.50                 ; 2.50 for >100k tokens
+      :cutoff-date "2026-06")
      (claude-haiku-4-5-20251001
       :description "Near-frontier intelligence at blazing speeds with extended thinking"
       :capabilities (media tool-use cache)
@@ -658,6 +674,8 @@ Media files, if present, are placed in `gptel-context'."
      (claude-opus-5-5
       :description "Long-running agentic coding and knowledge work"
       :capabilities (media tool-use cache)
+      ;; Opus 5.5 does not support disabling reasoning.
+      :reasoning-effort (member low medium high xhigh max)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
       :context-window 1000
       :input-cost 4
@@ -672,6 +690,16 @@ Media files, if present, are placed in `gptel-context'."
       :input-cost 5
       :output-cost 25
       :cutoff-date "2026-05")
+     (claude-opus-4-9
+      :description "Most capable model for complex reasoning and advanced coding"
+      :capabilities (media tool-use cache)
+      ;; Opus 4.9 does not support disabling reasoning.
+      :reasoning-effort (member low medium high xhigh max)
+      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
+      :context-window 1000
+      :input-cost 5
+      :output-cost 25
+      :cutoff-date "2026-01")
      (claude-opus-4-8
       :description "Most capable model for complex reasoning and advanced coding"
       :capabilities (media tool-use cache)
