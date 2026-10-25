@@ -41,6 +41,11 @@ jobs:
           persist-credentials: false
           submodules: false
 
+      - name: Install Emacs for trusted loader regressions
+        uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # reviewed 2026-10-25
+        with:
+          version: '31.1'
+
       - name: Test trusted synchronization code
         working-directory: control
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
