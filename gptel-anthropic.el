@@ -596,7 +596,7 @@ Media files, if present, are placed in `gptel-context'."
    '((claude-sonnet-5-5
       :description "The best combination of speed and intelligence"
       :capabilities (media tool-use cache)
-      :provider (:anthropic-disabled-reasoning-effort between_tools)
+      :provider (:anthropic-disabled-reasoning-effort "between_tools")
       :reasoning-effort (member disabled low medium high xhigh max)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp" "application/pdf")
       :context-window 1000
