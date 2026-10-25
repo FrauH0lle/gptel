@@ -1,0 +1,254 @@
+name: Synchronize gptel stack
+
+on:
+  schedule:
+    - cron: '37 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-stack
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CANDIDATE_DIR: ${{ github.workspace }}/stack-candidate
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'FrauH0lle/gptel' &&
+      github.event.repository.default_branch == 'master' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.manifest.outputs.status }}
+      manifest-sha: ${{ steps.manifest.outputs.manifest-sha }}
+      artifact-id: ${{ steps.preparation.outputs.artifact-id }}
+    steps:
+      - name: Check out trusted control code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          submodules: false
+
+      - name: Test trusted synchronization code
+        working-directory: control
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+
+      - name: Prepare immutable candidate
+        run: python3 control/scripts/stack-sync.py prepare --repo "$GITHUB_WORKSPACE/control" --output "$CANDIDATE_DIR"
+
+      - name: Bind manifest outputs
+        id: manifest
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          raw = (pathlib.Path(os.environ['CANDIDATE_DIR']) / 'manifest.json').read_bytes()
+          if len(raw) > 65536:
+              raise SystemExit('Manifest exceeds summary/output limit')
+          manifest = json.loads(raw)
+          if manifest['status'] not in ('noop', 'update') or manifest['source_mode'] != 'remote':
+              raise SystemExit('Unexpected preparation status or nonremote source')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              print('status=' + manifest['status'], file=out)
+              print('manifest-sha=' + hashlib.sha256(raw).hexdigest(), file=out)
+          PY
+
+      - name: Upload original preparation files
+        id: preparation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stack-preparation
+          path: |
+            ${{ env.CANDIDATE_DIR }}/manifest.json
+            ${{ env.CANDIDATE_DIR }}/candidate.bundle
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarize preparation
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import html, json, os, pathlib
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              print('## Prepare: ' + os.environ['JOB_STATUS'], file=out)
+              path = pathlib.Path(os.environ['CANDIDATE_DIR']) / 'manifest.json'
+              if path.is_file() and path.stat().st_size <= 65536:
+                  manifest = json.loads(path.read_bytes())
+                  print('<pre>' + html.escape(json.dumps(manifest, indent=2)) + '</pre>', file=out)
+                  if manifest.get('status') == 'noop':
+                      print('No source changes; validation and publication skipped. This is not a fresh test of the application.', file=out)
+              if os.environ['JOB_STATUS'] != 'success':
+                  print('Preparation failed; no publication is permitted. See the failing step log.', file=out)
+                  print('::error::Stack preparation failed; published branches were not updated.')
+          PY
+
+  validate:
+    needs: prepare
+    if: >-
+      needs.prepare.outputs.status == 'update' &&
+      github.repository == 'FrauH0lle/gptel' &&
+      github.event.repository.default_branch == 'master' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.validation.outputs.artifact-id }}
+    steps:
+      - name: Check out the same trusted control code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          submodules: false
+
+      - name: Download original preparation by immutable ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: ${{ env.CANDIDATE_DIR }}
+          merge-multiple: true
+
+      - name: Install Emacs 31.1
+        uses: purcell/setup-emacs@34c6ded44899fd1bf74d2889558befd1750e61a7 # reviewed 2026-10-25
+        with:
+          version: '31.1'
+
+      # No token env, persisted checkout credentials, user secrets, or writer cache.
+      # The trusted runner provisions packages and the recorded ERT suite itself.
+      - name: Validate exact candidate without publication credentials
+        run: python3 control/scripts/stack-sync.py validate --candidate "$CANDIDATE_DIR"
+
+      - name: Upload validation report only
+        id: validation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stack-validation
+          path: ${{ env.CANDIDATE_DIR }}/validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload raw diagnostics separately
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stack-validation-diagnostics
+          path: ${{ env.CANDIDATE_DIR }}/validation-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize validation
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import html, json, os, pathlib
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              print('## Validate: ' + os.environ['JOB_STATUS'], file=out)
+              path = pathlib.Path(os.environ['CANDIDATE_DIR']) / 'validation.json'
+              if not path.is_file():
+                  path = path.with_name('validation-report.json')
+              if path.is_file() and path.stat().st_size <= 16 * 1024 * 1024:
+                  document = json.loads(path.read_bytes())
+                  report = document.get('report', document)
+                  compilation, ert = report.get('compile', {}), report.get('ert', {})
+                  dependencies = ert.get('dependencies', compilation.get('dependencies', report.get('dependencies', [])))
+                  compact = {
+                      'success': report.get('success'),
+                      'manifest_sha256': document.get('manifest_sha256'),
+                      'head': report.get('head'), 'emacs': report.get('emacs'),
+                      'submodule': report.get('submodule'),
+                      'dependencies': [{key: dep.get(key) for key in ('name', 'version', 'library')} for dep in dependencies],
+                      'checks': [{key: check.get(key) for key in ('name', 'status', 'exit_code')} for check in report.get('checks', [])],
+                      'compile': {'status': compilation.get('status'), 'files': [
+                          {'file': pathlib.Path(item['file']).name, 'status': item.get('status'), 'error': item.get('error')}
+                          for item in compilation.get('files', [])]},
+                      'ert': {key: ert.get(key) for key in ('status', 'test_count', 'completed', 'unexpected', 'skipped')},
+                      'error': report.get('error'),
+                  }
+                  print('<pre>' + html.escape(json.dumps(compact, indent=2)) + '</pre>', file=out)
+              else:
+                  print('Report missing or exceeds the 16 MiB summary input limit; inspect artifacts and step logs.', file=out)
+              if os.environ['JOB_STATUS'] != 'success':
+                  print('Validation failed; publication is blocked. See the report and failing step log.', file=out)
+                  print('::error::Stack validation failed; published branches were not updated.')
+          PY
+
+  publish:
+    needs: [prepare, validate]
+    if: >-
+      needs.prepare.outputs.status == 'update' &&
+      needs.validate.result == 'success' &&
+      github.repository == 'FrauH0lle/gptel' &&
+      github.event.repository.default_branch == 'master' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Never check out a candidate ref or download a validation-produced bundle.
+      - name: Check out the same trusted control code only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+          submodules: false
+
+      - name: Download original preparation by immutable ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: ${{ env.CANDIDATE_DIR }}
+          merge-multiple: true
+
+      - name: Download separate validation report by immutable ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.validate.outputs.artifact-id }}
+          path: ${{ runner.temp }}/stack-validation
+          merge-multiple: true
+
+      - name: Attach report without replacing original preparation
+        run: |
+          test ! -e "$CANDIDATE_DIR/validation.json"
+          install -m 600 "$RUNNER_TEMP/stack-validation/validation.json" "$CANDIDATE_DIR/validation.json"
+
+      - name: Publish both branches atomically with expected-SHA leases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_MANIFEST_SHA: ${{ needs.prepare.outputs.manifest-sha }}
+        run: |
+          python3 control/scripts/stack-sync.py publish \
+            --repo "$GITHUB_WORKSPACE/control" --candidate "$CANDIDATE_DIR" \
+            --expected-manifest-sha "$EXPECTED_MANIFEST_SHA"
+
+      - name: Summarize publication
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          MANIFEST_SHA: ${{ needs.prepare.outputs.manifest-sha }}
+        run: |
+          {
+            printf '## Publish: %s\n\nManifest SHA256: `%s`\n' "$JOB_STATUS" "$MANIFEST_SHA"
+            printf '\nSee the preparation summary for exact input and candidate revisions.\n'
+            printf 'The validation job, not push-triggered CI, gates publication.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$JOB_STATUS" != success ]]; then
+            echo '::error::Stack publication failed; inspect the failed step and remote refs before retrying.'
+          fi
