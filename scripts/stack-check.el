@@ -31,7 +31,9 @@
       package-quickstart nil
       package-native-compile nil
       native-comp-jit-compilation nil
-      enable-local-variables nil
+      ;; Saved-chat fixtures need declared-safe metadata such as gptel--bounds.
+      ;; Permit those data values, but never evaluate file-local forms.
+      enable-local-variables :safe
       enable-local-eval nil
       auth-sources nil
       url-privacy-level 'high

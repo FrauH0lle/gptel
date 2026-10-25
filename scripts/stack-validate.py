@@ -160,6 +160,12 @@ class Validator:
             raise ValidationError("fetched test HEAD does not match recorded gitlink")
         self.report["submodule"] = {"path": "test", "url": TEST_URL, "head": actual}
         test_files = self.elisp_files(tests, "test-lisp")
+        # Keep personal regressions separate from the pinned upstream gitlink.
+        local_suite = self.git("local-test-tree", "ls-tree", "HEAD", "--", "local-tests").strip()
+        if local_suite:
+            if not re.fullmatch(r"040000 tree [0-9a-f]{40,64}\tlocal-tests", local_suite):
+                raise ValidationError("local-tests must be a tracked directory")
+            test_files += self.elisp_files(self.tree / "local-tests", "local-test-lisp")
         config = {
             "tree": str(self.tree), "tests": str(tests),
             "candidate_files": files, "test_files": test_files,

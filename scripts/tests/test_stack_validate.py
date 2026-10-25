@@ -34,6 +34,8 @@ class FakeProcesses:
         self.test_head = TEST
         self.test_files = ["gptel-helper.el", "strangely-named.el"]
         self.gitlink_mode = "160000"
+        self.local_test_mode = None
+        self.local_test_files = ["local-regression.el"]
 
     def __call__(self, argv, **kwargs):
         self.calls.append((argv, kwargs))
@@ -69,8 +71,13 @@ class FakeProcesses:
             elif args[0] == "ls-tree":
                 if args[-1] == "test":
                     output = f"{self.gitlink_mode} commit {TEST}\ttest\n"
+                elif args[-1] == "local-tests":
+                    if self.local_test_mode:
+                        kind = "tree" if self.local_test_mode == "040000" else "blob"
+                        output = f"{self.local_test_mode} {kind} {TREE}\tlocal-tests\n"
                 else:
-                    files = (self.test_files if Path(kwargs["cwd"]).name == "test"
+                    files = (self.local_test_files if Path(kwargs["cwd"]).name == "local-tests"
+                             else self.test_files if Path(kwargs["cwd"]).name == "test"
                              else [".dir-locals.el", "gptel.el", "gptel-request.el"])
                     output = "".join(f"100644 blob {TREE}\t{name}\0" for name in files)
         return subprocess.CompletedProcess(argv, code, output)
@@ -124,6 +131,24 @@ class ValidateTests(unittest.TestCase):
                 self.assertIn("-Q", argv)
                 self.assertEqual(Path(argv[-1]), Path(validate.__file__).with_name("stack-check.el"))
                 self.assertFalse(Path(env["STACK_VALIDATE_RESULT"]).is_relative_to(self.tree))
+
+    def test_local_regressions_augment_the_complete_pinned_suite(self):
+        self.fake.local_test_mode = "040000"
+        status, report = self.run_validation()
+        self.assertEqual(status, 0)
+        self.assertEqual([Path(p).name for p in report["test_files"]],
+                         self.fake.test_files + self.fake.local_test_files)
+
+    def test_non_directory_or_empty_local_suite_is_rejected(self):
+        self.fake.local_test_mode = "120000"
+        status, report = self.run_validation()
+        self.assertEqual(status, 1)
+        self.assertIn("tracked directory", report["error"])
+        self.fake.local_test_mode = "040000"
+        self.fake.local_test_files = []
+        status, report = self.run_validation()
+        self.assertEqual(status, 1)
+        self.assertIn("no top-level Lisp", report["error"])
 
     def test_compile_failure_still_runs_source_ert_and_blocks_success(self):
         self.fake.stage_exits["compile"] = 1
@@ -301,6 +326,33 @@ class LoaderTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(data["status"], "fail")
         self.assertEqual(data["files"][0]["status"], "fail")
+
+    def test_safe_fixture_locals_are_read_but_unsafe_values_and_eval_are_not(self):
+        self.source.write_text(self.source.read_text() + r'''
+(defvar-local fixture-bounds nil)
+(put 'fixture-bounds 'safe-local-variable #'listp)
+(defvar fixture-unsafe nil)
+(defvar fixture-evaluated nil)
+''')
+        chat = self.root / "chat.txt"
+        chat.write_text("Text\n\nLocal Variables:\nfixture-bounds: ((response (1 4)))\n"
+                        "fixture-unsafe: (unsafe-value)\n"
+                        "eval: (setq fixture-evaluated t)\nEnd:\n")
+        self.suite.write_text(f''';;; suite.el -*- lexical-binding: t; -*-
+(require 'ert)
+(ert-deftest fixture-safe-locals ()
+  (with-temp-buffer
+    (insert-file-contents {json.dumps(str(chat))})
+    (hack-local-variables)
+    (should (equal fixture-bounds '((response (1 4)))))
+    (should-not fixture-unsafe)
+    (should-not fixture-evaluated)
+    (should-not enable-local-eval)))
+''')
+        result, data = self.run_loader("ert")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(data["completed"], 1)
+        self.assertEqual(data["unexpected"], 0)
 
     def test_no_ert_discovery_is_explicit_failure(self):
         self.suite.write_text("(require 'ert)\n")
