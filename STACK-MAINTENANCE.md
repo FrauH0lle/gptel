@@ -35,9 +35,11 @@ Nothing here authorizes a push or changes repository settings. Before activation
 
 1. Review the initial mapping below, tree-preservation evidence, scripts, tests,
    action pins, workflow, and validation results. Resolve any failing checks.
-2. With explicit approval, publish the initial `pr-1338-layer` and `local-stack`
-   branches to `FrauH0lle/gptel`. Do not publish newer synchronization candidates
-   in place of the exact initial reconstruction without review.
+2. With explicit approval, publish the reviewed `pr-1338-layer` and `local-stack`
+   tips to `FrauH0lle/gptel`. Keep the exact initial reconstruction in history,
+   but do not publish that known-failing snapshot as the maintained stack: review
+   the visible follow-up fix on `stack-validation-fixes` described below first.
+   Any newer synchronization candidate also requires review before publication.
 3. With separate approval, install the reviewed automation from `stack-sync-setup`
    on the existing default `master`. Do not change the default branch or merge
    tooling into `local-stack`.
@@ -70,6 +72,13 @@ plus the test-only `markdown-mode` prerequisite in isolation and fetches the exa
 suite with nonzero discovery, and records versions. Candidate code runs only
 without publication credentials. Do not export `GH_TOKEN` or `GITHUB_TOKEN` into
 validation; the runner rejects them.
+
+Declared-safe file-local metadata is enabled (`enable-local-variables :safe`) so
+saved-chat fixtures can restore their bounds; file-local evaluation stays disabled.
+Personal regressions may live in a tracked `local-tests/` directory as visible
+top-level `.el` files. The validator runs these **in addition to** every recorded
+upstream test file, without changing the pinned test gitlink. A non-directory or
+an empty local suite fails validation rather than silently dropping coverage.
 
 Use a new, nonexistent output directory for each preparation:
 
@@ -250,7 +259,7 @@ Expect count `1` and no merges. The exact equality accounts for all surviving
 effects, including the reasoning-effort change, adapted fix/revert handling, and
 merge-resolution residual; author names and subjects were not used as classifiers.
 
-### Local verification on 2026-10-25
+### Initial verification on 2026-10-25 (before runtime corrections)
 
 The real `prepare --local-stack` path fetched the live public sources and produced
 a verified no-op: upstream and PR still matched the pinned revisions above. This
@@ -284,10 +293,53 @@ The identical failing tests in both runs were:
 - `gptel-test-stream-parsing-openrouter-02a`
 - `gptel-test-stream-parsing-openrouter-02b`
 
-**Application validation failed; initial publication and activation remain blocked.**
-Baseline reproduction does not waive candidate failures. Resolve these failures
-in separately reviewed application work and revalidate before activation; do not
-weaken tests or alter the tree-preserved migration to manufacture a pass.
+**Historical result: application validation failed at this stage.** Baseline
+reproduction did not waive candidate failures. The separately reviewed corrections
+and successful revalidation below supersede this failure status; the exact
+tree-preserved migration itself remains unchanged.
+
+### Runtime corrections and successful revalidation on 2026-10-25
+
+Application commit `94582006a33b0b27c74364dac8ad1e1707906c42` on
+`stack-validation-fixes` is a new visible commit directly above the initial
+`75079ccdcf17b21d929970ae6f7236236538a693` stack. It removes the per-delta assistant-role
+reasoning reset and resets `:reasoning-block` once per actual request instead,
+including tool continuations using either curl or URL transport. Late reasoning
+chunks are still retained for replay. Two local ERT regressions cover these cases;
+both fail against the original sources and pass against the fixed sources.
+
+Control commit `e803eb282269dbb6edbf54e772afba8ad057c13f` on `stack-sync-setup`
+corrects the six Markdown/persistence failures by allowing declared-safe fixture
+metadata, with file-local eval still disabled. A real-Emacs regression verifies
+that safe bounds load while unsafe values and eval do not. No fixture, expected
+output, test gitlink, or dependency-version pin was changed.
+
+| Scenario | Check / metric | Result |
+| --- | --- | --- |
+| Fixed checkout and prepared bundle, each | Successful compilation | 18 Lisp files |
+| Fixed checkout and prepared bundle, each | ERT completed | 173 tests |
+| Fixed checkout and prepared bundle, each | ERT unexpected failures | 0 tests |
+| Fixed checkout and prepared bundle, each | ERT skipped | 0 tests |
+| Updated tooling | Standard-library regression tests passed | 60 tests |
+| Workflow | actionlint 1.7.12 | Pass |
+
+Both production validation paths used Emacs 31.1, the unchanged test gitlink above,
+and the same dependency versions as the initial run. A bounded read-only review
+found no correctness or security regressions in these deltas.
+
+Fresh live preparation still found upstream `e7cebe4` and PR head `464f6f5`, so its
+source update was a verified no-op. Preparation used a disposable repository copy
+whose `local-stack` pointed to the fixed commit; the original checkout and its
+`local-stack` ref remain untouched. Despite the no-op, an explicit `validate` run
+compiled and tested the exact prepared bundle and produced successful bound
+`validation.json` evidence:
+
+- Manifest SHA256: `7575aecb7419a294381401a5edceebbec7b5ecc11c5d4ead0978cbd04a55371d`
+- Bundle SHA256: `459fe5fefcb1387bfa6add1b04e405124130502f0996797e4e9b88e9dab4580d`
+
+The artifact is `source_mode: local` and cannot be published. Nothing was pushed
+or activated. Publication and hosted Actions/token/branch-rule verification still
+require separate approval; successful local checks do not establish hosted behavior.
 
 ## Checking automation changes
 
