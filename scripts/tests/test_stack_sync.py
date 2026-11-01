@@ -248,7 +248,7 @@ class StackIntegration(unittest.TestCase):
     def test_merge_conflict_does_not_touch_worktree_or_remote(self):
         self.update_upstream("pr.txt", "conflicting upstream\n")
         before = self.head(), self.refs(), self.git(self.repo, "status", "--porcelain")
-        with self.assertRaises(sync.StackError):
+        with self.assertRaisesRegex(sync.StackError, r"CONFLICT .*pr\.txt"):
             self.prepare()
         self.assertEqual(before, (self.head(), self.refs(), self.git(self.repo, "status", "--porcelain")))
         self.assertFalse(self.candidate.exists())

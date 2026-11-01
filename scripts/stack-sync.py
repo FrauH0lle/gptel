@@ -124,7 +124,9 @@ class Git:
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True)
         if check and result.returncode:
-            raise StackError(f"git {args[0]} failed: {result.stderr.strip()}")
+            details = "\n".join(part.strip() for part in (result.stdout, result.stderr)
+                                if part.strip())
+            raise StackError(f"git {args[0]} failed: {details}")
         return result.stdout.strip() if check else result
 
     def init(self, path, bare=False):
