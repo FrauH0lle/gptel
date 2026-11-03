@@ -51,6 +51,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
 
       - name: Prepare immutable candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 control/scripts/stack-sync.py prepare --repo "$GITHUB_WORKSPACE/control" --output "$CANDIDATE_DIR"
 
       - name: Bind manifest outputs
