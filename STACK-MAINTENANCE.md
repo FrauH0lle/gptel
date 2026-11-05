@@ -100,6 +100,9 @@ Preparation does not change the current checkout or include unpublished commits
 implicitly. It validates layer metadata and linear personal history even for a
 no-op. A closed/merged PR, conflict, unexpectedly empty replay, malformed history,
 missing branch, or network error stops the process for manual review.
+While the PR head is unchanged, an upstream update cherry-picks the published
+layer onto the new upstream, so a manually resolved layer stays resolved. A new
+PR head is squash-merged from scratch and may need resolving again.
 
 Keep `manifest.json` and `candidate.bundle` unchanged. Successful validation adds
 `validation.json`, binding the report to both original file digests and the exact

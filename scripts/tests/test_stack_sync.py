@@ -253,6 +253,18 @@ class StackIntegration(unittest.TestCase):
         self.assertEqual(before, (self.head(), self.refs(), self.git(self.repo, "status", "--porcelain")))
         self.assertFalse(self.candidate.exists())
 
+    def test_manually_resolved_layer_survives_later_upstream_updates(self):
+        upstream = self.update_upstream("pr.txt", "conflicting upstream\n")
+        self.git(self.repo, "checkout", "-B", "pr-1338-layer", upstream)
+        self.commit("pr.txt", "resolved\n", self.message(upstream, self.pr))
+        self.git(self.repo, "checkout", "-B", "local-stack")
+        self.commit("personal.txt", "personal\n", "Personal change")
+        self.push_stack()
+        self.update_upstream("other.txt", "unrelated\n")
+        manifest = self.prepare()
+        with sync.verified(self.candidate, policy=self.policy) as (git, bare, _, _, _):
+            self.assertEqual(git.run(bare, "show", f"{manifest['new']['layer']}:pr.txt"), "resolved")
+
     def test_personal_rebase_conflict(self):
         self.commit("pr.txt", "personal conflicting PR\n", "personal edits PR")
         self.push_stack()

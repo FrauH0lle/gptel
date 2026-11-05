@@ -242,7 +242,12 @@ def prepare(repo, output, *, local_stack=False, policy=PRODUCTION, provider=api_
         new = dict(upstream=upstream, pr=pr, layer=layer, stack=stack)
         if not unchanged:
             git.run(scratch, "checkout", "--detach", upstream)
-            git.run(scratch, "merge", "--squash", "--no-commit", pr)
+            if pr == old["pr"]:
+                # Same PR head: carry the reviewed layer (and any manual conflict
+                # resolution in it) forward instead of re-merging the PR from scratch.
+                git.run(scratch, "cherry-pick", "--no-commit", layer)
+            else:
+                git.run(scratch, "merge", "--squash", "--no-commit", pr)
             message = ("Squashed contribution from PR #1338\n\n"
                        f"Upstream-Commit: {upstream}\nPR-Head: {pr}\nPR-URL: {policy.pr_url}\n")
             git.run(scratch, "commit", "--allow-empty", "-m", message)
