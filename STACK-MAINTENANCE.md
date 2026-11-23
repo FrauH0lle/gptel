@@ -189,6 +189,56 @@ failed run pass. Reprepare and revalidate from reviewed branch state. If the PR
 closes or merges, review a new stack policy manually rather than silently dropping
 the layer.
 
+### Recognizing a conflict
+
+A merge conflict while replaying the layer or the personal stack makes
+`stack-sync.py` exit with status 3. The run then fails with a "Manual conflict
+resolution needed" annotation and a job summary listing the conflicting files.
+That is an integration task for the stack, not a broken workflow. Scheduled runs
+keep failing the same way until the resolved branches are published.
+
+### Resolving a layer conflict by hand
+
+While the PR head is unchanged, replay the published layer onto the new upstream
+in a disposable worktree and keep the synchronizer's commit shape: exactly one
+parent (the upstream tip) and the final trailer block shown below.
+
+```bash
+git fetch origin
+git fetch https://github.com/karthink/gptel.git master refs/pull/1338/head
+UPSTREAM=...  # new upstream tip;  PR_HEAD=... # unchanged PR head
+git worktree add --detach ../gptel-resolve "$UPSTREAM"
+cd ../gptel-resolve
+git -c merge.conflictStyle=zdiff3 cherry-pick --no-commit origin/pr-1338-layer
+# Resolve, then:
+git commit -m "Squashed contribution from PR #1338
+
+Upstream-Commit: $UPSTREAM
+PR-Head: $PR_HEAD
+PR-URL: https://github.com/karthink/gptel/pull/1338"
+LAYER=$(git rev-parse HEAD)
+git checkout --detach origin/local-stack
+git rebase --merge --empty=stop --keep-empty --reapply-cherry-picks \
+  --no-update-refs --onto "$LAYER" origin/pr-1338-layer
+```
+
+Run the trusted validator on the result (`scripts/stack-validate.py --tree ...`
+in a fresh checkout, without tokens), then publish both tips together with
+expected-SHA leases:
+
+```bash
+git push --atomic \
+  --force-with-lease=refs/heads/pr-1338-layer:"$(git rev-parse origin/pr-1338-layer)" \
+  --force-with-lease=refs/heads/local-stack:"$(git rev-parse origin/local-stack)" \
+  origin "$LAYER":refs/heads/pr-1338-layer "$(git rev-parse HEAD)":refs/heads/local-stack
+```
+
+Later scheduled runs cherry-pick this resolved layer, so the resolution persists
+until upstream changes the same lines again or the PR head changes. Upstream model
+tables change often and overlap the PR's per-model `:reasoning-effort` lines; a
+line-level conflict there usually resolves to upstream's entry plus the PR's added
+keys. Check that every model entry stays well-formed before validating.
+
 Successful updates retain the previous two tips as annotated backup tags:
 `stack-backup/<run-id>/pr-1338-layer` and `stack-backup/<run-id>/local-stack`.
 The run ID is the original manifest's SHA256 digest; each tag records that digest

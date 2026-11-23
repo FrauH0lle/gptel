@@ -29,6 +29,14 @@ class StackError(Exception):
     """A failed invariant; no publication is permitted."""
 
 
+class ConflictError(StackError):
+    """Replaying the layer or personal stack needs manual conflict resolution."""
+
+
+# Distinct CLI status so CI can report conflicts separately from other failures.
+CONFLICT_EXIT = 3
+
+
 @dataclass(frozen=True)
 class Policy:
     """Injection seam for offline integration tests, not a CLI option."""
@@ -172,6 +180,16 @@ def parents(git, repo, commit):
     return git.run(repo, "show", "-s", "--format=%P", commit).split()
 
 
+def replay(git, repo, *args):
+    """Run a history-replaying Git command, classifying content conflicts."""
+    try:
+        git.run(repo, *args)
+    except StackError as exc:
+        if re.search(r"^CONFLICT \(", str(exc), re.MULTILINE):
+            raise ConflictError(f"manual conflict resolution required: {exc}") from exc
+        raise
+
+
 def layer_metadata(git, repo, layer, policy):
     message = git.run(repo, "show", "-s", "--format=%B", layer)
     # Require an unambiguous final trailer block, including exact URL and hashes.
@@ -245,16 +263,16 @@ def prepare(repo, output, *, local_stack=False, policy=PRODUCTION, provider=api_
             if pr == old["pr"]:
                 # Same PR head: carry the reviewed layer (and any manual conflict
                 # resolution in it) forward instead of re-merging the PR from scratch.
-                git.run(scratch, "cherry-pick", "--no-commit", layer)
+                replay(git, scratch, "cherry-pick", "--no-commit", layer)
             else:
-                git.run(scratch, "merge", "--squash", "--no-commit", pr)
+                replay(git, scratch, "merge", "--squash", "--no-commit", pr)
             message = ("Squashed contribution from PR #1338\n\n"
                        f"Upstream-Commit: {upstream}\nPR-Head: {pr}\nPR-URL: {policy.pr_url}\n")
             git.run(scratch, "commit", "--allow-empty", "-m", message)
             new["layer"] = git.oid(scratch, "HEAD")
             git.run(scratch, "checkout", "--detach", stack)
-            git.run(scratch, "rebase", "--merge", "--empty=stop", "--keep-empty",
-                    "--reapply-cherry-picks", "--no-update-refs", "--onto", new["layer"], layer)
+            replay(git, scratch, "rebase", "--merge", "--empty=stop", "--keep-empty",
+                   "--reapply-cherry-picks", "--no-update-refs", "--onto", new["layer"], layer)
             new["stack"] = git.oid(scratch, "HEAD")
         manifest = dict(schema_version=1, source_mode="local" if local_stack else "remote",
                         status="noop" if unchanged else "update",
@@ -470,6 +488,9 @@ def main(argv=None):
                     publish(args.output, args.repo)
         print(json.dumps(result, sort_keys=True))
         return 0
+    except ConflictError as exc:
+        print(f"stack-sync: {exc}", file=sys.stderr)
+        return CONFLICT_EXIT
     except (StackError, OSError, ValueError) as exc:
         print(f"stack-sync: {exc}", file=sys.stderr)
         return 1

@@ -53,7 +53,25 @@ jobs:
       - name: Prepare immutable candidate
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 control/scripts/stack-sync.py prepare --repo "$GITHUB_WORKSPACE/control" --output "$CANDIDATE_DIR"
+        run: |
+          log="$RUNNER_TEMP/prepare-stderr.log"
+          status=0
+          python3 control/scripts/stack-sync.py prepare --repo "$GITHUB_WORKSPACE/control" \
+            --output "$CANDIDATE_DIR" 2> "$log" || status=$?
+          cat "$log" >&2
+          # Exit status 3 is stack-sync.py's CONFLICT_EXIT: an upstream or PR change
+          # needs manual resolution, not a fix to this workflow.
+          if [[ $status -eq 3 ]]; then
+            files=$(sed -n 's/^CONFLICT ([^)]*): Merge conflict in //p' "$log" | sort -u | paste -sd ' ' -)
+            echo "::error title=Manual conflict resolution needed::Upstream changes conflict with the PR #1338 layer or the personal stack${files:+ (files: $files)}. Nothing was published; see 'Resolving a layer conflict by hand' in STACK-MAINTENANCE.md."
+            {
+              echo '### Manual conflict resolution needed'
+              echo
+              echo "Conflicting files: ${files:-see the step log}."
+              echo "Nothing was validated or published. Follow 'Resolving a layer conflict by hand' in STACK-MAINTENANCE.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       - name: Bind manifest outputs
         id: manifest

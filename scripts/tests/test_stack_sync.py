@@ -248,10 +248,16 @@ class StackIntegration(unittest.TestCase):
     def test_merge_conflict_does_not_touch_worktree_or_remote(self):
         self.update_upstream("pr.txt", "conflicting upstream\n")
         before = self.head(), self.refs(), self.git(self.repo, "status", "--porcelain")
-        with self.assertRaisesRegex(sync.StackError, r"CONFLICT .*pr\.txt"):
+        with self.assertRaisesRegex(sync.ConflictError, r"CONFLICT .*pr\.txt"):
             self.prepare()
         self.assertEqual(before, (self.head(), self.refs(), self.git(self.repo, "status", "--porcelain")))
         self.assertFalse(self.candidate.exists())
+
+    def test_rewritten_pr_squash_conflict_is_classified(self):
+        self.update_upstream("pr.txt", "conflicting upstream\n")
+        self.update_pr()
+        with self.assertRaisesRegex(sync.ConflictError, r"git merge failed"):
+            self.prepare()
 
     def test_manually_resolved_layer_survives_later_upstream_updates(self):
         upstream = self.update_upstream("pr.txt", "conflicting upstream\n")
@@ -270,14 +276,16 @@ class StackIntegration(unittest.TestCase):
         self.push_stack()
         self.update_pr()
         before = self.refs()
-        with self.assertRaises(sync.StackError):
+        with self.assertRaisesRegex(sync.ConflictError, r"git rebase failed"):
             self.prepare()
         self.assertEqual(before, self.refs())
 
     def test_unexpected_empty_stops_but_intentional_empty_survives(self):
         self.update_upstream("personal.txt", "personal\n")
-        with self.assertRaises(sync.StackError):
+        with self.assertRaises(sync.StackError) as caught:
             self.prepare()
+        # An emptied replay is not a content conflict and must stay a hard failure.
+        self.assertNotIsInstance(caught.exception, sync.ConflictError)
         # Remove the nonempty personal patch and replace it with intentional empty.
         self.git(self.repo, "checkout", "local-stack")
         self.git(self.repo, "reset", "--hard", self.layer)
@@ -577,6 +585,16 @@ with open(a.report,'w') as f:json.dump(dict(schema_version=1,success=True,head=g
             self.assertEqual(sync.main(["sync", "--repo", str(self.repo), "--output", str(self.candidate)]), 0)
             validate.assert_called_once()
             publish.assert_not_called()
+
+    def test_cli_exit_status_distinguishes_conflicts(self):
+        argv = ["prepare", "--repo", str(self.repo), "--output", str(self.candidate)]
+        for error, status in ((sync.ConflictError("CONFLICT"), sync.CONFLICT_EXIT),
+                              (sync.StackError("other"), 1)):
+            with self.subTest(status=status), mock.patch.object(sync, "prepare", side_effect=error), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(sync.main(argv), status)
+                self.assertIn(str(error), stderr.getvalue())
+        self.assertNotIn(sync.CONFLICT_EXIT, (0, 1))
 
     def test_hostile_global_git_config_and_hooks_not_executed(self):
         marker = self.root / "executed"
